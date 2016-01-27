@@ -136,7 +136,7 @@
 - (BOOL)_canShowNative
 {
   FBSDKServerConfiguration *configuration = [FBSDKServerConfigurationManager cachedServerConfiguration];
-  BOOL useNativeDialog = [configuration useNativeDialogForDialogName:FBSDKDialogConfigurationNameAppInvite];
+  BOOL useNativeDialog = YES;
   return (useNativeDialog && [FBSDKInternalUtility isFacebookAppInstalled]);
 }
 

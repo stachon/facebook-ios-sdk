@@ -36,7 +36,7 @@
 @property (nonatomic, copy) void (^uploadCallback)(NSDictionary *results, NSError *error);
 @end
 
-static NSString *const kTaggedPlaceID = @"88603851976";
+static NSString *const kTaggedPlaceID = @"1163806960341831";
 
 @implementation FBSDKShareAPIIntegrationTests
 {
@@ -102,7 +102,6 @@ static NSString *const kTaggedPlaceID = @"88603851976";
 
 - (void)testOpenGraph
 {
-  [FBSDKSettings setFacebookDomainPart:@"prod"];
   NSArray *testUsers = [self createTwoFriendedTestUsers];
   FBSDKAccessToken *one = testUsers[0];
   NSDictionary *tagParameters = [self taggableFriendsOfTestUser:one];
@@ -115,7 +114,6 @@ static NSString *const kTaggedPlaceID = @"88603851976";
                                                          key:@"test"];
   content.peopleIDs = @[tag];
   content.previewPropertyName = @"test";
-  content.placeID = kTaggedPlaceID;
 
   FBSDKTestBlocker *blocker = [[FBSDKTestBlocker alloc] initWithExpectedSignalCount:1];
   __block NSString *postID = nil;
@@ -137,7 +135,6 @@ static NSString *const kTaggedPlaceID = @"88603851976";
     XCTAssertNil(error);
     XCTAssertEqualObjects(postID, result[@"id"]);
     XCTAssertEqualObjects(taggedName, result[@"tags"][0][@"name"]);
-    XCTAssertEqualObjects(kTaggedPlaceID, result[@"place"][@"id"]);
     [blocker signal];
   }];
   XCTAssertTrue([blocker waitWithTimeout:20], @"couldn't fetch verify post.");
@@ -147,7 +144,6 @@ static NSString *const kTaggedPlaceID = @"88603851976";
 
 - (void)testShareLink
 {
-  [FBSDKSettings setFacebookDomainPart:@"prod"];
   NSArray *testUsers = [self createTwoFriendedTestUsers];
   FBSDKAccessToken *one = testUsers[0];
   NSDictionary *tagParameters = [self taggableFriendsOfTestUser:one];
@@ -185,11 +181,68 @@ static NSString *const kTaggedPlaceID = @"88603851976";
   XCTAssertTrue([blocker waitWithTimeout:200], @"couldn't fetch verify post.");
 }
 
+- (void)testShareLinkTokenOverride
+{
+  FBSDKTestBlocker *blocker = [[FBSDKTestBlocker alloc] initWithExpectedSignalCount:1];
+  __block FBSDKAccessToken *tokenWithPublish;
+  __block FBSDKAccessToken *tokenWithEmail;
+  [[self testUsersManager] requestTestAccountTokensWithArraysOfPermissions:@[
+                                                                             [NSSet setWithObject:@"publish_actions"],
+                                                                             [NSSet setWithObject:@"email"]                                                                            ]
+                                                          createIfNotFound:YES
+                                                         completionHandler:^(NSArray *tokens, NSError *error) {
+                                                           tokenWithPublish = tokens[0];
+                                                           tokenWithEmail = tokens[1];
+                                                           [blocker signal];
+                                                         }];
+  XCTAssertTrue([blocker waitWithTimeout:8], @"failed to fetch two test users for testing");
+  XCTAssertFalse([tokenWithPublish.userID isEqualToString:tokenWithEmail.userID], @"failed to fetch two distinct users for testing");
+
+  // set current token to email token.
+  [FBSDKAccessToken setCurrentAccessToken:tokenWithEmail];
+
+  FBSDKShareLinkContent *content = [[FBSDKShareLinkContent alloc] init];
+  content.contentURL = [NSURL URLWithString:@"http://www.yahoo.com/"];
+
+  blocker = [[FBSDKTestBlocker alloc] initWithExpectedSignalCount:1];
+  __block NSString *postID = nil;
+  self.shareCallback = ^(NSDictionary *results, NSError *error, BOOL isCancel) {
+    NSCAssert(error == nil, @"share failed :%@", error);
+    NSCAssert(!isCancel, @"share cancelled");
+    postID = results[@"postId"];
+    [blocker signal];
+  };
+  // but send as the other token
+  FBSDKShareAPI *sharer = [[FBSDKShareAPI alloc] init];
+  sharer.shareContent = content;
+  sharer.delegate = self;
+  sharer.accessToken = tokenWithPublish;
+  [sharer share];
+
+  XCTAssertTrue([blocker waitWithTimeout:5], @"share didn't complete");
+  XCTAssertNotNil(postID);
+
+  //now fetch and verify the share.
+  blocker = [[FBSDKTestBlocker alloc] initWithExpectedSignalCount:1];
+  [[[FBSDKGraphRequest alloc] initWithGraphPath:postID
+                                     parameters:@{ @"fields" : @"id,from" }
+                                    tokenString:tokenWithPublish.tokenString
+                                        version:nil
+                                     HTTPMethod:@"GET"
+    ]
+   startWithCompletionHandler:^(FBSDKGraphRequestConnection *connection, id result, NSError *error) {
+     XCTAssertNil(error);
+     XCTAssertEqualObjects(postID, result[@"id"]);
+     XCTAssertEqualObjects(tokenWithPublish.userID, result[@"from"][@"id"]);
+     [blocker signal];
+   }];
+  XCTAssertTrue([blocker waitWithTimeout:10], @"couldn't fetch verify post.");
+}
+
 #pragma mark - Test Share Photo
 
 - (void)testSharePhoto
 {
-  [FBSDKSettings setFacebookDomainPart:@"prod"];
   NSArray *testUsers = [self createTwoFriendedTestUsers];
   FBSDKAccessToken *one = testUsers[0];
   NSDictionary *tagParameters = [self taggableFriendsOfTestUser:one];
@@ -244,7 +297,6 @@ static NSString *const kTaggedPlaceID = @"88603851976";
 
 - (void)testShareVideo
 {
-  [FBSDKSettings setFacebookDomainPart:@"prod"];
   NSArray *testUsers = [self createTwoFriendedTestUsers];
   FBSDKAccessToken *one = testUsers[0];
   NSDictionary *tagParameters = [self taggableFriendsOfTestUser:one];
@@ -268,7 +320,6 @@ static NSString *const kTaggedPlaceID = @"88603851976";
 
 - (void)testVideoUploader
 {
-  [FBSDKSettings setFacebookDomainPart:@"prod"];
   FBSDKAccessToken *token = [self getTokenWithPermissions:[NSSet setWithObject:@"publish_actions"]];
   [FBSDKAccessToken setCurrentAccessToken:token];
   NSMutableDictionary *dictionary = [[NSMutableDictionary alloc] init];

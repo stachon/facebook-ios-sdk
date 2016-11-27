@@ -3,6 +3,8 @@ samples/Hackbook/Hackbook.xcodeproj/*.pbxuser
 samples/Hackbook/Hackbook.xcodeproj/*.mode*
 samples/Hackbook/Hackbook.xcodeproj/xcuserdata*
 samples/Hackbook/Hackbook.xcodeproj/project.xcworkspace
+samples/LoginSample/Pods
+samples/LoginSample/LoginSample.xcworkspace
 src/facebook-ios-sdk.xcodeproj/*.pbxuser
 src/facebook-ios-sdk.xcodeproj/*.mode*
 src/build/
@@ -17,6 +19,11 @@ xcuserdata
 TestAppIdAndSecret.xcconfig
 .DS_Store
 *.xcscmblueprint
+Carthage
 
 # vim temp files
 *.swp
+
+# buck
+buck-out/
+.buckd/

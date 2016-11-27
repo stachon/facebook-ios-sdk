@@ -60,13 +60,15 @@ NS_ASSUME_NONNULL_BEGIN
 
  See [Facebook Device Login](https://developers.facebook.com/docs/facebook-login/for-devices).
  */
-@interface FBSDKDeviceLoginManager : NSObject
+@interface FBSDKDeviceLoginManager : NSObject <NSNetServiceDelegate>
 
 /*!
  @abstract Initializes a new instance.
  @param permissions permissions to request.
  */
-- (instancetype)initWithPermissions:(nullable NSArray<NSString *> *)permissions NS_DESIGNATED_INITIALIZER;
+- (instancetype)initWithPermissions:(nullable NSArray<NSString *> *)permissions
+                   enableSmartLogin:(BOOL)enableSmartLogin
+NS_DESIGNATED_INITIALIZER;
 
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
@@ -80,6 +82,12 @@ NS_ASSUME_NONNULL_BEGIN
  @abstract the requested permissions.
  */
 @property (nullable, nonatomic, copy, readonly) NSArray<NSString *> *permissions;
+
+/*!
+ @abstract the optional URL to redirect the user to after they complete the login.
+ @discussion the URL must be configured in your App Settings -> Advanced -> OAuth Redirect URIs
+ */
+@property (nullable, nonatomic, copy) NSURL *redirectURL;
 
 /*!
  @abstract Starts the device login flow

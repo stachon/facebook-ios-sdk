@@ -87,6 +87,8 @@
 - (void)testFacebookURL
 {
   NSString *URLString;
+  NSString *tier = [FBSDKSettings facebookDomainPart];
+  [FBSDKSettings setFacebookDomainPart:@""];
 
   URLString = [FBSDKInternalUtility facebookURLWithHostPrefix:nil path:nil queryParameters:nil error:NULL].absoluteString;
   XCTAssertEqualObjects(URLString, @"https://facebook.com/" FBSDK_TARGET_PLATFORM_VERSION);
@@ -155,6 +157,23 @@
                                                defaultVersion:@"v2.0"
                                                         error:NULL].absoluteString;
   XCTAssertEqualObjects(URLString, @"https://m.facebook.com/v2.0/v1/dialog/share");
+  [FBSDKSettings setFacebookDomainPart:tier];
+
+  [FBSDKSettings setGraphAPIVersion:@"v3.3"];
+  URLString = [FBSDKInternalUtility facebookURLWithHostPrefix:@"m"
+                                                         path:@"/v1/dialog/share"
+                                              queryParameters:nil
+                                               defaultVersion:nil
+                                                        error:NULL].absoluteString;
+  XCTAssertEqualObjects(URLString, @"https://m.facebook.com/v3.3/v1/dialog/share");
+  [FBSDKSettings setGraphAPIVersion:nil];
+  URLString = [FBSDKInternalUtility facebookURLWithHostPrefix:@"m"
+                                                         path:@"/dialog/share"
+                                              queryParameters:nil
+                                               defaultVersion:nil
+                                                        error:NULL].absoluteString;
+  XCTAssertEqualObjects(URLString, @"https://m.facebook.com/" FBSDK_TARGET_PLATFORM_VERSION @"/dialog/share");
+
 }
 
 @end

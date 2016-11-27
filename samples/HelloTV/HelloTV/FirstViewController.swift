@@ -20,146 +20,96 @@ import UIKit
 import FBSDKShareKit
 import FBSDKTVOSKit
 
-class FirstViewController: UIViewController,
-  FBSDKDeviceLoginButtonDelegate,
-  FBSDKSharingDelegate,
-  FBSDKDeviceLoginViewControllerDelegate
-{
-  @IBOutlet weak var imageView: UIImageView!
-  @IBOutlet weak var loginButton: FBSDKDeviceLoginButton!
-  var _blankImage: UIImage!
+class FirstViewController: UIViewController {
+  @IBOutlet fileprivate weak var imageView: UIImageView?
+  @IBOutlet fileprivate weak var loginButton: FBSDKDeviceLoginButton?
+  @IBOutlet fileprivate weak var shareButton: FBSDKDeviceShareButton?
+
+  fileprivate var blankImage: UIImage?
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    loginButton.delegate = self
-    _blankImage = self.imageView.image
+
+    loginButton?.delegate = self
+    blankImage = imageView?.image
 
     // Subscribe to FB session changes (in case they logged in or out in the second tab)
-    NSNotificationCenter.defaultCenter().addObserverForName(
-      FBSDKAccessTokenDidChangeNotification,
+    NotificationCenter.default.addObserver(
+      forName: .FBSDKAccessTokenDidChange,
       object: nil,
-      queue: NSOperationQueue.mainQueue()) { (notification) -> Void in
-        self._updateContent()
+      queue: .main) { (notification) -> Void in
+        self.updateContent()
     }
 
     // If the user is already logged in.
-    if (FBSDKAccessToken.currentAccessToken() != nil) {
-      _updateContent()
+    if FBSDKAccessToken.current() != nil {
+      updateContent()
     }
+
+    let linkContent = FBSDKShareLinkContent()
+    linkContent.contentURL = URL(string: "https://developers.facebook.com/docs/tvos")
+    linkContent.contentDescription = "Let's build a tvOS app with Facebook!"
+    shareButton?.shareContent = linkContent
   }
 
-  @IBAction func shareLinkTap(sender: AnyObject) {
-    // Check for publish permissions; otherwise, ask for them.
-    if (FBSDKAccessToken.currentAccessToken()?.hasGranted("publish_actions") != nil) {
-      _publishLink()
-    } else {
-      let alertController = UIAlertController(
-        title: "Grant Permissions?",
-        message: "In order to share the link, can we post on your behalf on Facebook?",
-        preferredStyle: .Alert)
-      alertController.addAction(UIAlertAction(
-        title: "Yes",
-        style: .Default,
-        handler: { (UIAlertAction) -> Void in
-          let askPublishViewController = FBSDKDeviceLoginViewController()
-          askPublishViewController.publishPermissions = ["publish_actions"]
-          askPublishViewController.delegate = self
-          self.showViewController(askPublishViewController, sender: self)
-      }))
-      alertController.addAction(UIAlertAction(
-        title: "No Thanks",
-        style: .Cancel,
-        handler: nil))
-      self.showViewController(alertController, sender: self)
-    }
-  }
+  fileprivate func flipImageViewToImage(_ image: UIImage?) {
+    guard let imageView = imageView else { return }
 
-  func _flipImageViewToImage(image: UIImage) {
-    UIView.transitionWithView(self.imageView,
-      duration: 1,
-      options:.TransitionCrossDissolve,
-      animations: { () -> Void in
-        self.imageView.image = image
+    UIView.transition(with: imageView,
+                      duration: 1,
+                      options:.transitionCrossDissolve,
+                      animations: { () -> Void in
+                        self.imageView?.image = image
       }, completion: nil)
   }
 
-  func _publishLink() {
-    let linkContent = FBSDKShareLinkContent()
-    linkContent.contentURL = NSURL(string: "https://developers.facebook.com/docs/tvos")
-    linkContent.contentDescription = "Let's build a tvOS app with Facebook!"
-    FBSDKShareAPI.shareWithContent(linkContent, delegate: self)
-  }
-
-  func _updateContent() {
-    if (self.imageView.image == _blankImage) {
-      // Download the user's profile image. Usually Facebook Graph API
-      // should be accessed via `FBSDKGraphRequest` except for binary data (like the image).
-      let urlString = String(
-        format: "https://graph.facebook.com/v2.5/me/picture?type=square&width=%d&height=%d&access_token=%@",
-        Int(self.imageView.bounds.size.width),
-        Int(self.imageView.bounds.size.height),
-        FBSDKAccessToken.currentAccessToken().tokenString)
-
-      let url = NSURL(string: urlString)
-      let userImage = UIImage(data: NSData(contentsOfURL: url!)!)
-      _flipImageViewToImage(userImage!)
+  fileprivate func updateContent() {
+    guard let imageView = imageView else {
+      return
     }
+    guard FBSDKAccessToken.current() != nil else {
+      imageView.image = blankImage
+      return
+    }
+
+    // Download the user's profile image. Usually Facebook Graph API
+    // should be accessed via `FBSDKGraphRequest` except for binary data (like the image).
+    let urlString = String(
+      format: "https://graph.facebook.com/v2.5/me/picture?type=square&width=%d&height=%d&access_token=%@",
+      Int(imageView.bounds.size.width),
+      Int(imageView.bounds.size.height),
+      FBSDKAccessToken.current().tokenString)
+
+    let url = URL(string: urlString)
+    let userImage = UIImage(data: try! Data(contentsOf: url!))
+    flipImageViewToImage(userImage!)
+  }
+}
+
+extension FirstViewController: FBSDKDeviceLoginButtonDelegate {
+  func deviceLoginButtonDidCancel(_ button: FBSDKDeviceLoginButton) {
+    print("Login cancelled")
   }
 
-  //MARK: FBSDKSharingDelegate
-
-  func sharer(sharer: FBSDKSharing!, didCompleteWithResults results: [NSObject : AnyObject]!) {
-    let alert = UIAlertController(
-      title: "Success!",
-      message: "Thanks for sharing!",
-      preferredStyle: .Alert)
-    alert .addAction(UIAlertAction(
-      title: "OK",
-      style: .Default,
-      handler: nil))
-    self.showViewController(alert, sender: self)
+  func deviceLoginButtonDidLog(in button: FBSDKDeviceLoginButton) {
+    print("Login complete")
+    updateContent()
   }
 
-  func sharer(sharer: FBSDKSharing!, didFailWithError error: NSError!) {
-    print("Share failed %@", error)
-  }
-  func sharerDidCancel(sharer: FBSDKSharing!) {
-    print("Share cancelled")
+  func deviceLoginButtonDidLogOut(_ button: FBSDKDeviceLoginButton) {
+    print("Logout complete")
+    flipImageViewToImage(blankImage)
   }
 
-  //MARK: FBSDKDeviceLoginButtonDelegate
-
-  func deviceLoginButtonDidCancel(button: FBSDKDeviceLoginButton) {
-    print("Login cancelled");
+  public func deviceLoginButtonDidFail(_ button: FBSDKDeviceLoginButton, error: Error) {
+    print("Login error : ", error)
   }
+}
 
-  func deviceLoginButtonDidLogIn(button: FBSDKDeviceLoginButton) {
-    print("Login complete");
-    _updateContent()
-  }
+extension FirstViewController: FBSDKDeviceShareViewControllerDelegate {
 
-  func deviceLoginButtonDidLogOut(button: FBSDKDeviceLoginButton) {
-    print("Logout complete");
-    _flipImageViewToImage(_blankImage);
-  }
-
-  func deviceLoginButtonDidFail(button: FBSDKDeviceLoginButton, error: NSError) {
-    print("Login error : %@", error)
-  }
-
-  //MARK: FBSDKDeviceLoginViewControllerDelegate
-
-  func deviceLoginViewControllerDidCancel(viewController: FBSDKDeviceLoginViewController) {
-    print("Cancelled publish permissions request");
-  }
-
-  func deviceLoginViewControllerDidFinish(viewController: FBSDKDeviceLoginViewController) {
-    _publishLink()
-    _updateContent()
-  }
-
-  func deviceLoginViewControllerDidFail(viewController: FBSDKDeviceLoginViewController, error: NSError) {
-    print ("Publish permissions request error: ", error)
+  public func deviceShareViewControllerDidComplete(_ viewController: FBSDKDeviceShareViewController, error: Error?) {
+    print("Device share finished with error?", error)
   }
 }
 

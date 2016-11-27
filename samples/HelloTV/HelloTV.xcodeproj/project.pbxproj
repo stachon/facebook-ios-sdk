@@ -64,7 +64,9 @@
 				9D81FDB01C5048A900AF5F8D /* HelloTV */,
 				9D81FDAF1C5048A900AF5F8D /* Products */,
 			);
+			indentWidth = 2;
 			sourceTree = "<group>";
+			tabWidth = 2;
 		};
 		9D81FDAF1C5048A900AF5F8D /* Products */ = {
 			isa = PBXGroup;
@@ -155,6 +157,7 @@
 				TargetAttributes = {
 					9D81FDAD1C5048A900AF5F8D = {
 						CreatedOnToolsVersion = 7.2;
+						LastSwiftMigration = 0800;
 					};
 				};
 			};
@@ -302,6 +305,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 9D81FDD11C504A0000AF5F8D /* Application-TVOS.xcconfig */;
 			buildSettings = {
+				SWIFT_VERSION = 3.0;
 			};
 			name = Debug;
 		};
@@ -309,6 +313,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 9D81FDD11C504A0000AF5F8D /* Application-TVOS.xcconfig */;
 			buildSettings = {
+				SWIFT_VERSION = 3.0;
 			};
 			name = Release;
 		};

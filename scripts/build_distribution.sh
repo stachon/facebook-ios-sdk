@@ -38,6 +38,13 @@ FB_SDK_BUILD_PACKAGE_SAMPLES=$FB_SDK_BUILD_PACKAGE/Samples
 FB_SDK_BUILD_PACKAGE_SCRIPTS=$FB_SDK_BUILD/Scripts
 FB_SDK_BUILD_PACKAGE_DOCSETS_FOLDER=$FB_SDK_BUILD_PACKAGE/DocSets/
 
+# -----------------------------------------------------------------------------
+# Install required dependencies
+#
+(gem list naturally -i > /dev/null) || die "Run 'gem install naturally' first"
+(gem list xcpretty -i > /dev/null) || die "Run 'gem install xcpretty' first"
+(gem list rake -i > /dev/null) || die "Run 'gem install rake' first"
+
 # -----------------------------------------------------------------------------gi
 # Build package directory structure
 #
@@ -73,7 +80,7 @@ echo Building Distribution.
 \cp -R $"$FB_SDK_ROOT"/FacebookSDKStrings.bundle "$FB_SDK_BUILD_PACKAGE" \
   || die "Could not copy FacebookSDKStrings.bundle"
 for SAMPLE in Configurations Iconicus RPSSample Scrumptious ShareIt SwitchUserSample; do
-  \cp -R "$FB_SDK_SAMPLES/$SAMPLE" "$FB_SDK_BUILD_PACKAGE_SAMPLES" \
+  \rsync -avmc --exclude "${SAMPLE}.xcworkspace" "$FB_SDK_SAMPLES/$SAMPLE" "$FB_SDK_BUILD_PACKAGE_SAMPLES" \
     || die "Could not copy $SAMPLE"
 done
 \cp "$FB_SDK_ROOT/README.txt" "$FB_SDK_BUILD_PACKAGE" \
@@ -86,18 +93,42 @@ done
 # Fixup projects to point to the SDK framework
 #
 for fname in $(find "$FB_SDK_BUILD_PACKAGE_SAMPLES" -name "Project.xcconfig" -print); do \
-  sed "s|../../build|../../|g;s|../../Bolts-IOS/build/ios||g" \
+  sed 's|\(\.\.\(/\.\.\)*\)/build|\1|g;s|\.\.\(/\.\.\)*/Bolts-IOS/build/ios||g' \
+    ${fname} > ${fname}.tmpfile  && mv ${fname}.tmpfile ${fname}; \
+done
+for fname in $(find "$FB_SDK_BUILD_PACKAGE_SAMPLES" -name "project.pbxproj" -print); do \
+  sed 's|\(path[[:space:]]*=[[:space:]]*\.\.\(/\.\.\)*\)/build|\1|g' \
     ${fname} > ${fname}.tmpfile  && mv ${fname}.tmpfile ${fname}; \
 done
 
 # -----------------------------------------------------------------------------
+# Build AKFAccountKit framework
+#
+if [ -z $SKIPBUILD ]; then
+  (xcodebuild -project "${FB_SDK_ROOT}"/AccountKit/AccountKit.xcodeproj -scheme "AccountKit-Universal" -configuration Release clean build) || die "Failed to build account kit"
+fi
+\cp -R "$FB_SDK_BUILD"/AccountKit.framework "$FB_SDK_BUILD_PACKAGE" \
+  || die "Could not copy AccountKit.framework"
+\cp -R "$FB_SDK_BUILD"/AccountKitStrings.bundle "$FB_SDK_BUILD_PACKAGE" \
+  || die "Could not copy AccountKitStrings.bundle"
+
+# -----------------------------------------------------------------------------
+# Build FBNotifications framework
+#
+
+# Build stuff
+\rake -f "$FB_SDK_ROOT/FBNotifications/iOS/Rakefile" package:frameworks || die "Could not build FBNotifications.framework"
+\unzip "$FB_SDK_ROOT/FBNotifications/iOS/build/release/FBNotifications-iOS.zip" -d $FB_SDK_BUILD
+\cp -R "$FB_SDK_BUILD"/FBNotifications.framework "$FB_SDK_BUILD_PACKAGE" \
+  || die "Could not copy FBNotifications.framework"
+
+# -----------------------------------------------------------------------------
 # Build FBAudienceNetwork framework
 #
-(
-  if [ -z $SKIPBUILD ]; then
-    . "$FB_SDK_ROOT/internal/scripts/build_workspace.sh" -c Release "$FB_SDK_ROOT/ads/src/FBAudienceNetwork.xcworkspace"
-  fi
-) || die "Failed to build FBAudienceNetwork"
+
+if [ -z $SKIPBUILD ]; then
+  (xcodebuild -workspace "${FB_SDK_ROOT}"/ads/src/FBAudienceNetwork.xcworkspace -scheme "BuildAll-Universal" -configuration Release clean build) || die "Failed to build FBAudienceNetwork"
+fi
 FBAN_SAMPLES=$FB_SDK_BUILD_PACKAGE/Samples/FBAudienceNetwork
 \cp -R "$FB_SDK_ROOT"/ads/build/FBAudienceNetwork.framework "$FB_SDK_BUILD_PACKAGE" \
   || die "Could not copy FBAudienceNetwork.framework"
@@ -120,7 +151,7 @@ done
 # Build Messenger Kit
 #
 if [ -z $SKIPBUILD ]; then
-  ("$XCTOOL" -project "${FB_SDK_ROOT}"/FBSDKMessengerShareKit/FBSDKMessengerShareKit.xcodeproj -scheme "FBSDKMessengerShareKit-universal" -configuration Release clean build) || die "Failed to build messenger kit"
+  (xcodebuild -project "${FB_SDK_ROOT}"/FBSDKMessengerShareKit/FBSDKMessengerShareKit.xcodeproj -scheme "FBSDKMessengerShareKit-universal" -configuration Release clean build) || die "Failed to build messenger kit"
 fi
 \cp -R "$FB_SDK_BUILD"/FBSDKMessengerShareKit.framework "$FB_SDK_BUILD_PACKAGE" \
   || die "Could not copy FBSDKMessengerShareKit.framework"

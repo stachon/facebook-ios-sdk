@@ -29,6 +29,8 @@ static NSMutableArray<FBSDKDeviceLoginManager *> *g_loginManagerInstances;
 @implementation FBSDKDeviceLoginManager {
   FBSDKDeviceLoginCodeInfo *_codeInfo;
   BOOL _isCancelled;
+  NSNetService * _loginAdvertisementService;
+  BOOL _isSmartLoginEnabled;
 }
 
 + (void)initialize
@@ -38,10 +40,11 @@ static NSMutableArray<FBSDKDeviceLoginManager *> *g_loginManagerInstances;
   }
 }
 
-- (instancetype)initWithPermissions:(NSArray<NSString *> *)permissions
+- (instancetype)initWithPermissions:(NSArray<NSString *> *)permissions enableSmartLogin:(BOOL)enableSmartLogin
 {
   if ((self = [super init])) {
     _permissions = [permissions copy];
+    _isSmartLoginEnabled = enableSmartLogin;
   }
   return self;
 }
@@ -51,14 +54,16 @@ static NSMutableArray<FBSDKDeviceLoginManager *> *g_loginManagerInstances;
   [FBSDKInternalUtility validateAppID];
   [g_loginManagerInstances addObject:self];
 
-  FBSDKGraphRequest *request = [[FBSDKGraphRequest alloc]
-                                initWithGraphPath:@"oauth/device"
-                                parameters:@{
-                                             @"type" : @"device_code",
-                                             @"client_id" : [FBSDKSettings appID],
-                                             @"scope" : [self.permissions componentsJoinedByString:@","] ?: @""
-                                             }
-                                HTTPMethod:@"POST"];
+  NSDictionary *parameters = @{
+                               @"scope": [self.permissions componentsJoinedByString:@","] ?: @"",
+                               @"redirect_uri": self.redirectURL.absoluteString ?: @"",
+                               FBSDK_DEVICE_INFO_PARAM: [FBSDKDeviceRequestsHelper getDeviceInfo],
+                               };
+  FBSDKGraphRequest *request = [[FBSDKGraphRequest alloc] initWithGraphPath:@"device/login"
+                                                                 parameters:parameters
+                                                                tokenString:[FBSDKInternalUtility validateRequiredClientAccessToken]
+                                                                 HTTPMethod:@"POST"
+                                                                      flags:FBSDKGraphRequestFlagNone];
   [request setGraphErrorRecoveryDisabled:YES];
   [request startWithCompletionHandler:^(FBSDKGraphRequestConnection *connection, id result, NSError *error) {
     if (error) {
@@ -72,14 +77,21 @@ static NSMutableArray<FBSDKDeviceLoginManager *> *g_loginManagerInstances;
                                           verificationURL:[NSURL URLWithString:result[@"verification_uri"]]
                                           expirationDate:[[NSDate date] dateByAddingTimeInterval:[result[@"expires_in"] doubleValue]]
                                           pollingInterval:[result[@"interval"] integerValue]];
-    [self.delegate deviceLoginManager:self
-                  startedWithCodeInfo:_codeInfo];
+
+    if (_isSmartLoginEnabled) {
+      [FBSDKDeviceRequestsHelper startAdvertisementService:_codeInfo.loginCode
+                                              withDelegate:self
+      ];
+    }
+
+    [self.delegate deviceLoginManager:self startedWithCodeInfo:_codeInfo];
     [self _schedulePoll:_codeInfo.pollingInterval];
   }];
  }
 
 - (void)cancel
 {
+  [FBSDKDeviceRequestsHelper cleanUpAdvertisementService:self];
   _isCancelled = YES;
   [g_loginManagerInstances removeObject:self];
 }
@@ -88,6 +100,7 @@ static NSMutableArray<FBSDKDeviceLoginManager *> *g_loginManagerInstances;
 
 - (void)_notifyError:(NSError *)error
 {
+  [FBSDKDeviceRequestsHelper cleanUpAdvertisementService:self];
   [self.delegate deviceLoginManager:self
                 completedWithResult:nil
                               error:error];
@@ -96,6 +109,7 @@ static NSMutableArray<FBSDKDeviceLoginManager *> *g_loginManagerInstances;
 
 - (void)_notifyToken:(NSString *)tokenString
 {
+  [FBSDKDeviceRequestsHelper cleanUpAdvertisementService:self];
   void(^completeWithResult)(FBSDKDeviceLoginManagerResult *) = ^(FBSDKDeviceLoginManagerResult *result) {
     [self.delegate deviceLoginManager:self completedWithResult:result error:nil];
     [g_loginManagerInstances removeObject:self];
@@ -146,57 +160,65 @@ static NSMutableArray<FBSDKDeviceLoginManager *> *g_loginManagerInstances;
 
 - (void)_processError:(NSError *)error
 {
-  NSString *message = [error.userInfo[FBSDKErrorDeveloperMessageKey] lowercaseString];
-  if ([message isEqualToString:@"authorization_pending"]) {
-    [self _schedulePoll:_codeInfo.pollingInterval];
-  } else if ([message isEqualToString:@"code_expired"] ||
-             [message isEqualToString:@"authorization_declined"]) {
-    [self _notifyToken:nil];
-  } else if ([message isEqualToString:@"invalid api method"]) {
-    [FBSDKLogger singleShotLogEntry:FBSDKLoggingBehaviorDeveloperErrors
-                           logEntry:@"Device Login disabled. Verify you have enabled \"Login from devices\" in your app settings (Visit https://developers.facebook.com/apps for your app. Then check Settings > Advanced > OAuth Settings)"];
-    [self _notifyError:error];
-  } else if ([message isEqualToString:@"slow_down"]) {
-    [self _schedulePoll:_codeInfo.pollingInterval * 2];
-  } else {
-    [self _notifyError:error];
+  FBSDKTVOSErrorSubcode code = [error.userInfo[FBSDKGraphRequestErrorGraphErrorSubcode] unsignedIntegerValue];
+  switch (code) {
+    case FBSDKTVOSAuthorizationPendingErrorSubcode:
+      [self _schedulePoll:_codeInfo.pollingInterval];
+      break;
+    case FBSDKTVOSCodeExpiredErrorSubcode:
+    case FBSDKTVOSAuthorizationDeclinedErrorSubcode:
+      [self _notifyToken:nil];
+      break;
+    case FBSDKTVOSExcessivePollingErrorSubcode:
+      [self _schedulePoll:_codeInfo.pollingInterval * 2];
+    default:
+      [self _notifyError:error];
+      break;
   }
 }
 
 - (void)_schedulePoll:(NSUInteger)interval
 {
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(interval * NSEC_PER_SEC)),
-                 dispatch_get_main_queue(), ^{
-                   if (_isCancelled) {
-                     return;
-                   }
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(interval * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    if (_isCancelled) {
+      return;
+    }
 
-                   FBSDKGraphRequest *request = [[FBSDKGraphRequest alloc]
-                                                 initWithGraphPath:@"oauth/device"
-                                                 parameters:@{
-                                                              @"type" : @"device_token",
-                                                              @"client_id" : [FBSDKSettings appID],
-                                                              @"code" : _codeInfo.identifier
-                                                              }
-                                                 HTTPMethod:@"POST"];
-                   [request setGraphErrorRecoveryDisabled:YES];
-                   [request startWithCompletionHandler:^(FBSDKGraphRequestConnection *connection, id result, NSError *error) {
-                     if (_isCancelled) {
-                       return;
-                     }
-                     if (error) {
-                       [self _processError:error];
-                     } else {
-                       NSString *tokenString = result[@"access_token"];
-                       if (tokenString) {
-                         [self _notifyToken:tokenString];
-                       } else {
-                         NSError *unknownError = [FBSDKTVOSError errorWithCode:FBSDKTVOSUnknownErrorCode
-                                                                       message:@"Device Login poll failed. No token nor error was found."];
-                         [self _notifyError:unknownError];
-                       }
-                     }
-                   }];
-                 });
+    NSDictionary *parameters = @{ @"code": _codeInfo.identifier };
+    FBSDKGraphRequest *request = [[FBSDKGraphRequest alloc] initWithGraphPath:@"device/login_status"
+                                                                   parameters:parameters
+                                                                  tokenString:[FBSDKInternalUtility validateRequiredClientAccessToken]
+                                                                   HTTPMethod:@"POST"
+                                                                        flags:FBSDKGraphRequestFlagNone];
+    [request setGraphErrorRecoveryDisabled:YES];
+    [request startWithCompletionHandler:^(FBSDKGraphRequestConnection *connection, id result, NSError *error) {
+      if (_isCancelled) {
+        return;
+      }
+      if (error) {
+        [self _processError:error];
+      } else {
+        NSString *tokenString = result[@"access_token"];
+        if (tokenString) {
+          [self _notifyToken:tokenString];
+        } else {
+          NSError *unknownError = [FBSDKTVOSError errorWithCode:FBSDKTVOSUnknownErrorCode
+                                                        message:@"Device Login poll failed. No token nor error was found."];
+          [self _notifyError:unknownError];
+        }
+      }
+    }];
+  });
 }
+
+- (void)netService:(NSNetService *)sender
+     didNotPublish:(NSDictionary<NSString *, NSNumber *> *)errorDict
+{
+  // Only cleanup if the publish error is from our advertising service
+  if ([FBSDKDeviceRequestsHelper isDelegate:self forAdvertisementService:sender])
+  {
+    [FBSDKDeviceRequestsHelper cleanUpAdvertisementService:self];
+  }
+}
+
 @end

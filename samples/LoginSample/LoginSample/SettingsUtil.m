@@ -1,4 +1,4 @@
-// Copyright (c) 2014-present, Facebook, Inc. All rights reserved.
+// Copyright 2004-present Facebook. All Rights Reserved.
 //
 // You are hereby granted a non-exclusive, worldwide, royalty-free license to use,
 // copy, modify, and distribute this software in source code or binary form for use
@@ -19,8 +19,9 @@
 
 #import <AccountKit/AKFViewController.h>
 
+#import "FBTweak/FBTweakInline.h"
+
 #import "AdvancedUIManager.h"
-#import "FBTweakInline.h"
 #import "ReverbTheme.h"
 #import "ReverbUIManager.h"
 #import "Theme.h"
@@ -123,17 +124,17 @@ static NSArray *fbPermissions;
     AKFButtonType confirmButtonType = [FBTweakValue(@"Settings", @"AccountKit", @"Confirm Button", @(AKFButtonTypeDefault), [SettingsUtil entryButtonTweakValues]) integerValue];
     AKFTextPosition textPosition = [FBTweakValue(@"Settings", @"AccountKit", @"Text Position", @(AKFButtonTypeDefault), [SettingsUtil textPositionTweakValues]) integerValue];
     if ([Theme isReverbTheme:theme.themeType]) {
-      controller.advancedUIManager = [[ReverbUIManager alloc] initWithConfirmButtonType:confirmButtonType
-                                                                        entryButtonType:entryButtonType
-                                                                              loginType:controller.loginType
-                                                                           textPosition:textPosition
-                                                                                  theme:(ReverbTheme *)theme
-                                                                               delegate:nil];
+      controller.uiManager = [[ReverbUIManager alloc] initWithConfirmButtonType:confirmButtonType
+                                                                entryButtonType:entryButtonType
+                                                                      loginType:controller.loginType
+                                                                   textPosition:textPosition
+                                                                          theme:(ReverbTheme *)theme
+                                                                       delegate:nil];
     } else {
-      controller.advancedUIManager = [[AdvancedUIManager alloc] initWithConfirmButtonType:confirmButtonType
-                                                                          entryButtonType:entryButtonType
-                                                                                loginType:controller.loginType
-                                                                             textPosition:textPosition];
+      controller.uiManager = [[AdvancedUIManager alloc] initWithConfirmButtonType:confirmButtonType
+                                                                  entryButtonType:entryButtonType
+                                                                        loginType:controller.loginType
+                                                                     textPosition:textPosition];
     }
   }
 }

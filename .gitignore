@@ -1,3 +1,5 @@
+AccountKit/**/AccountKitServerSnapshotTests.xcworkspace/*
+AccountKit/**/AccountKitServerSnapshotTests.xcodeproj/*
 ads/samples/AdUnitsSample/AdUnitsSample.xcodeproj/*
 ads/samples/AdUnitsSample/AdUnitsSample.xcworkspace/*
 ads/samples/InstreamAdSample/InstreamAdSample.xcodeproj/*
@@ -6,6 +8,8 @@ ads/samples/NativeAdSample/NativeAdSample.xcodeproj/*
 ads/samples/NativeAdSample/NativeAdSample.xcworkspace/*
 ads/src/FBAudienceNetwork.xcworkspace/*
 ads/src/FBAudienceNetwork/FBAudienceNetwork.xcodeproj/*
+internal/testing/IpaSizeTestApp/**/*.xcworkspace/*
+internal/testing/IpaSizeTestApp/**/*.xcodeproj/*
 samples/Hackbook/build/
 samples/Hackbook/Hackbook.xcodeproj/*.pbxuser
 samples/Hackbook/Hackbook.xcodeproj/*.mode*

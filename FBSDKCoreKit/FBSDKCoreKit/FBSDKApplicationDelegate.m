@@ -62,9 +62,6 @@ static NSString *const FBSDKAppLinkInboundEvent = @"fb_al_inbound";
   BOOL _expectingBackground;
   UIViewController *_safariViewController;
   BOOL _isDismissingSafariViewController;
-#ifdef __IPHONE_11_0
-  SFAuthenticationSession *_authenticationSession;
-#endif
 }
 
 #pragma mark - Class Methods

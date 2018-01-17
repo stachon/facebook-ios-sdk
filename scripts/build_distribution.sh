@@ -30,8 +30,22 @@ check_binary_has_architectures() {
 
 	if [ "$SORTED_ARCHS" != "$VALID_ARCHS" ] ; then
 		echo "ERROR: Invalid Architectures for $1. Expected $VALID_ARCHS   Received: $SORTED_ARCHS";
-    exit 1
+    	exit 1
 	fi
+}
+
+check_binary_has_bitcode() {
+	# static lib only
+	local BINARY=$1
+	local BITCODE_SCRIPT="${FB_AD_SDK_ROOT}"/scripts/bitcodesize.rb
+
+	local ISSUES=$("$BITCODE_SCRIPT" "$BINARY")
+
+	if [ ! -z "$ISSUES" ] ; then
+		echo "$ISSUES"
+		echo "ERROR: Bitcode not found or weirdly small for $1. Check logs above.";
+    	exit 1
+    fi
 }
 
 # valid arguments -s -p [AudienceNetwork|FacebookSDK]
@@ -64,14 +78,37 @@ fi
 # Build FBAudienceNetwork framework
 #
 if [ "$PACKAGE" == "$PACAKAGE_AN" ]; then
+
+	# refuse to build with unclean state
+	repository_unclean=$(hg status -i ios-sdk/ | grep -v .DS_Store)
+	if [ "$repository_unclean" ]; then
+		echo "Detected unclean repository state:"
+		echo "$repository_unclean"
+		die "Please run 'hg purge --all' before building"
+	fi
+
 	AN_ZIP=$FB_AD_SDK_BUILD/$FB_AD_SDK_BINARY_NAME-$FB_AD_SDK_VERSION.zip
 	AN_BUILD_PACKAGE=$FB_AD_SDK_BUILD/package
 	AN_SAMPLES=$AN_BUILD_PACKAGE/Samples/FBAudienceNetwork
+	AN_STATIC_REPORT="${FB_SDK_ROOT}"/FBAudienceNetworkFramework.out
+	AN_DYNAMIC_REPORT="${FB_SDK_ROOT}"/FBAudienceNetworkDynamicFramework.out
 
 	if [ -z $SKIPBUILD ]; then
-	  (xcodebuild -workspace "${FB_SDK_ROOT}"/ads/src/FBAudienceNetwork.xcworkspace -scheme "BuildAll-Universal" -configuration Release clean build) || die "Failed to build FBAudienceNetwork"
-	  (xcodebuild -workspace "${FB_SDK_ROOT}"/ads/src/FBAudienceNetwork.xcworkspace -scheme "FBAudienceNetworkDynamicFramework-Universal" -configuration Release clean build) || die "Failed to build FBAudienceNetworkDynamicFramework"
+		buck build //ios-sdk/ads/src/FBAudienceNetwork:FBAudienceNetworkFramework --build-report "$AN_STATIC_REPORT" || die "Failed to build FBAudienceNetwork"
+		buck build //ios-sdk/ads/src/FBAudienceNetwork:FBAudienceNetworkDynamicFramework --build-report "$AN_DYNAMIC_REPORT" || die "Failed to build FBAudienceNetworkDynamicFramework"
+
+		AN_BUCK_STATIC_OUTPUT="${FB_SDK_ROOT}/../"$(cat "$AN_STATIC_REPORT" | grep -E -m 1 '"output"' | awk -F '"' '{ print $4 }')
+		AN_BUCK_DYNAMIC_OUTPUT="${FB_SDK_ROOT}/../"$(cat "$AN_DYNAMIC_REPORT" | grep -E -m 1 '"output"' | awk -F '"' '{ print $4 }')
+
+		rsync -avmc "$AN_BUCK_STATIC_OUTPUT" "$FB_AD_SDK_BUILD" \
+		  || die "Could not copy FBAudienceNetwork.framework"
+		rsync -avmc "$AN_BUCK_DYNAMIC_OUTPUT" "$FB_AD_SDK_BUILD" \
+		  || die "Could not copy FBAudienceNetworkDynamicFramework.framework"
+
+		rm "$AN_STATIC_REPORT"
+		rm "$AN_DYNAMIC_REPORT"
 	fi
+
 	rsync -avmc "$FB_AD_SDK_BUILD"/FBAudienceNetwork.framework "$AN_BUILD_PACKAGE" \
 	  || die "Could not copy FBAudienceNetwork.framework"
 	rsync -avmc "$FB_AD_SDK_BUILD"/FBAudienceNetworkDynamicFramework.framework "$AN_BUILD_PACKAGE" \
@@ -85,10 +122,20 @@ if [ "$PACKAGE" == "$PACAKAGE_AN" ]; then
 	    ${fname} > ${fname}.tmpfile  && mv ${fname}.tmpfile ${fname}; \
 	done
 
+	check_binary_has_architectures "$FB_AD_SDK_BUILD"/FBAudienceNetwork.framework/FBAudienceNetwork "$COMMON_ARCHS";
+	check_binary_has_architectures "$FB_AD_SDK_BUILD"/FBAudienceNetworkDynamicFramework.framework/FBAudienceNetworkDynamicFramework "$COMMON_ARCHS";
+
+	check_binary_has_bitcode "$FB_AD_SDK_BUILD"/FBAudienceNetwork.framework/FBAudienceNetwork
+
 	# Fix up samples
 	for fname in $(find "$AN_SAMPLES" -name "project.pbxproj" -print); do \
 	  sed "s|../../build|../../../|g;" \
 	    ${fname} > ${fname}.tmpfile  && mv ${fname}.tmpfile ${fname}; \
+	done
+	for fname in $(find "$AN_SAMPLES" -name "*-PUBLIC.xcodeproj" -print); do \
+	  newfname="$(echo ${fname} | sed -e 's/-PUBLIC//')" ; \
+	    rm -rf "${newfname}"; \
+	    mv "${fname}" "${newfname}" ; \
 	done
 
 	LANG=C
